@@ -10,6 +10,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 logger.info('Loading function')
+#DynamoDBに関するイニシャライズ
+dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
+
 
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
@@ -59,7 +62,7 @@ def put(event, context, userid, name) :
         logger.info("start status put")
 
         #登録実施, 既存の予定があれば上書きする
-        boto3.resource('dynamodb').Table("status").put_item(
+        dynamodb.Table("status").put_item(
             Item = {
                 "userid" : userid,
                 "inBusiness" : body_object["inBusiness"],
@@ -74,7 +77,7 @@ def put(event, context, userid, name) :
         
         #この処理は追って、移動するする予定
         #ログテーブルへの格納登録実施
-        boto3.resource('dynamodb').Table("status-log").put_item(
+        dynamodb.Table("status-log").put_item(
             Item = {
                 "userid" : userid,
                 "datetime" : str(datetime.datetime.today()+datetime.timedelta(hours = 9)),
@@ -123,7 +126,7 @@ def respond(statusCode, res=None):
 
 #汎用データ取得
 def get_daynamo_item(table_name, keyName, KeyValue  ):
-    return boto3.resource('dynamodb').Table(table_name).get_item(
+    return dynamodb.Table(table_name).get_item(
             Key={
                  keyName: KeyValue
             }

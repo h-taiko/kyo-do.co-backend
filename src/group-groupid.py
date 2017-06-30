@@ -29,29 +29,41 @@ def lambda_handler(event, context):
     
     if event["httpMethod"] == "PUT":
         return put(event, context, token)   
-    if event["httpMethod"] == "GET" :    
-        return get(event, context,token)
+    if event["httpMethod"] == "DELETE" :    
+        return delete(event, context,token)
     else :
         return respond("400",{"message":"not expected method"}) 
 
-#getメソッドでサービスをCallされた際の挙動
-def get(event, context, token) : 
+#deleteメソッドでサービスをCallされた際の挙動
+def delete(event, context, token) : 
     #tokenをキーにDynamoからitemを取得    
     item = get_daynamo_item("token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
-    
-    #グループIDをキーにデータを取得
-    groupId = event["pathParameters"]["groupid"]
-    item = get_daynamo_item("group","id",groupId)
 
+    requestUserId = item["Item"]["userid"]
+
+    #リクエストされたグループの現在情報を取得
+    item = get_daynamo_item("group","id",event["pathParameters"]["groupid"]) 
     logger.info(item)
-    
     if item.has_key("Item") == False :
-        return respond("400",{"message": "no groups"})
-    else :
-        return respond("200",{"members": item["Item"]["member"]} )
+        return respond("401",{"message": "No groupId"})
+
+    AdminList = item["Item"]["admin"]
+
+    #リクエストしてきたユーザがAdmin権限を持つか判定
+    if requestUserId not in AdminList :
+        return respond("401",{"message": "you have not this groups admin permission"})
+
+    #グループ削除します
+    dynamodb.Table("group").delete_item(
+            Key={
+                 "id": event["pathParameters"]["groupid"]
+            }
+        )
+    
+    return respond("200",{"message": "ok"})
 
 
 #putメソッドでサービスをCallされた際の挙動
@@ -70,35 +82,46 @@ def put(event, context, token) :
     if item.has_key("Item") == False :
         return respond("401",{"message": "No groupId"})
 
+    groupname = item["Item"]["groupname"]
     memberList = item["Item"]["member"]
     AdminList = item["Item"]["admin"]
-
-    body_object = json.loads(event["body"]) #eventのbodyにはJsonのStringが入っているので、Parseする
-    newMemberList = body_object["member"]
 
     #リクエストしてきたユーザがAdmin権限を持つか判定
     if requestUserId not in AdminList :
         return respond("401",{"message": "you have not this groups admin permission"})
 
-    #リクエスト後のユーザリストに自身がちゃんと残っているか判定。
-    if requestUserId not in newMemberList :
-        return respond("401",{"message": "admin(own) is not delete"})
 
-    #admin登録されているユーザが今回削除されている場合は、admin権限をトル
-    newAdminList = AdminList
+    body_object = json.loads(event["body"]) #eventのbodyにはJsonのStringが入っているので、Parseする    
+    #新管理者リスト作成。データが無かったら、そのまま
+    if body_object.has_key("admin") :
+        newAdminList = body_object["admin"]
+    else :
+        newAdminList = AdminList
+    #新グループ名のチェック
+    if body_object.has_key("groupname") :
+        newGroupName = body_object["groupname"]
+    else :
+        newGroupName = groupname
+
+    #新しく追加したAdminがmemberじゃなかったら、メンバーにも入れる
+    newMemberList = memberList
+    for newAdminId in newAdminList :
+        if newAdminId not in memberList :
+            newMemberList.append(newAdminId)
 
     #グループリストを更新
     response = dynamodb.Table('group').update_item(
                 Key = {
                     'id' : event["pathParameters"]["groupid"]
                 },
-                UpdateExpression =  'set #member = :new_member, amind = :new_admin',
+                UpdateExpression =  'set #member = :new_member, amind = :new_admin, groupname = :groupname ',
                 ExpressionAttributeNames = {
                     "#member": "member"                    
                 },
                 ExpressionAttributeValues={
                     ':new_member': newMemberList,
-                    ':new_admin' : newAdminList
+                    ':new_admin' : newAdminList,
+                    ':groupname' : newGroupName
                 },
                 ReturnValues="UPDATED_NEW"
     )

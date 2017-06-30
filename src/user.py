@@ -11,10 +11,21 @@ logger.setLevel(logging.INFO)
 
 logger.info('Loading function')
 
+#DynamoDBに関するイニシャライズ
+dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
+
+#環境定義 Prod環境の場合はそのままPrefixは入らない。Stagingの時は "ZZ_" となる(=DynamoDBのテーブル名として利用)
+stage = ""
+def envCheck(event) :
+    global stage
+    if event["requestContext"]["stage"] == "Dev" :
+        stage = "ZZ_"
+
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
 
     logger.info("Received event: " + json.dumps(event, indent=2))
+    envCheck(event)
 
     if event["httpMethod"] == "POST":
         return post(event, context)
@@ -31,15 +42,36 @@ def lambda_handler(event, context):
     if event["httpMethod"] == "GET" :
         return get(event, context,token)
     elif event["httpMethod"] == "PUT" :
-        return put(event, context,token)        
+        return put(event, context,token) 
+    elif event["httpMethod"] == "DELETE" :
+        return delete(event, context,token) 
     else :
         return respond("400",{"message":"not expected method"}) 
         
         
+#deleteメソッドでサービスをCallされた際の挙動
+def delete(event, context, token) : 
+
+    #tokenをキーにDynamoからitemを取得    
+    item = get_daynamo_item(stage+"token","token",token)
+    logger.info(item)
+    if item.has_key("Item") == False :
+        return respond("401",{"message": "invalid token"})
+    
+    #ユーザ削除＝退会
+    dynamodb.Table(stage+"user").delete_item(
+            Key={
+                 "userid": item["Item"]["userid"]
+            }
+        )
+    
+    return respond("200",{"message": "ok"})
+
+
 #getメソッドでサービスをCallされた際の挙動
 def get(event, context, token) : 
     #tokenをキーにDynamoからitemを取得    
-    item = get_daynamo_item("token","token",token)
+    item = get_daynamo_item(stage+"token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
@@ -51,12 +83,12 @@ def get(event, context, token) :
 #putメソッドでサービスをCallされた際の挙動
 def put(event, context, token) : 
     #tokenをキーにDynamoからitemを取得    
-    item = get_daynamo_item("token","token",token)
+    item = get_daynamo_item(stage+"token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
 
-    item2 = get_daynamo_item("user","userid",item["Item"]["userid"]) #tokenテーブルにはPasswordが無いので再度問合せ
+    item2 = get_daynamo_item(stage+"user","userid",item["Item"]["userid"]) #tokenテーブルにはPasswordが無いので再度問合せ
     logger.info(item2)    
 
     
@@ -74,7 +106,7 @@ def put(event, context, token) :
     logger.info(name)
     logger.info(password)
     
-    response = boto3.resource('dynamodb').Table('user').update_item(
+    response = dynamodb.Table(stage+'user').update_item(
                 Key = {
                     'userid' : item["Item"]["userid"]
                 },
@@ -90,6 +122,20 @@ def put(event, context, token) :
     )
     logger.info(response)
     
+    #tokenの名前も書き換えないと反映されないので要注意
+    response = dynamodb.Table(stage+'token').update_item(
+                Key = {
+                    'token' : token
+                },
+                UpdateExpression =  'set #name = :new_name',
+                ExpressionAttributeNames = {
+                    "#name": "name"                    
+                },
+                ExpressionAttributeValues={
+                    ':new_name' : name 
+                },
+                ReturnValues="UPDATED_NEW"
+    )
     
     return respond("200",body_object)
     
@@ -101,7 +147,7 @@ def post(event, context) :
     token = hashlib.md5( str(uuid.uuid4()) ).hexdigest() #token生成とりあえずは、MD5で良いか・・・    
     try :
         #登録実施
-        boto3.resource('dynamodb').Table("user").put_item(
+        dynamodb.Table(stage+"user").put_item(
             Item = {
                 "userid" : body_object["userid"],
                 "password" : body_object["password"],
@@ -131,7 +177,7 @@ def respond(statusCode, res=None):
 
 #汎用データ取得
 def get_daynamo_item(table_name, keyName, KeyValue  ):
-    return boto3.resource('dynamodb').Table(table_name).get_item(
+    return dynamodb.Table(table_name).get_item(
             Key={
                  keyName: KeyValue
             }

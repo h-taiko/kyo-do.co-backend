@@ -2,7 +2,7 @@
 from __future__ import print_function
 
 import boto3
-import json,logging
+import json,logging,re
 from boto3.dynamodb.conditions import Key, Attr
 import uuid, hashlib #token生成向け
 
@@ -10,14 +10,47 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 logger.info('Loading function')
+#DynamoDBに関するイニシャライズ
+dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
 
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
 
     if event["httpMethod"] == "POST":
         return post(event, context)
+
+    #以下のメソッドは認証が必要
+    AuthorizationHeader = event["headers"]["Authorization"]
+
+    if re.search(r"Bearer", AuthorizationHeader) is None :
+        return respond("401",{"message": "no Authorization"})
+        
+    #ヘッダからTokenを取り出す・・・ロジックイマイチ
+    token = AuthorizationHeader.replace("Bearer","").replace(" ","")
+    
+    #tokenをキーにDynamoからitemを取得    
+    item = get_daynamo_item("token","token",token)
+    logger.info(item)
+    if item.has_key("Item") == False :
+        return respond("401",{"message": "invalid token"})
+    
+    if event["httpMethod"] == "DELETE" :
+        return delete(event, context,token) 
     else :
         return respond("400",{"message":"not expected method"}) 
+
+
+#deleteメソッドでサービスをCallされた際の挙動
+def delete(event, context, token) : 
+    
+    #ログアウト
+    dynamodb.Table("token").delete_item(
+            Key={
+                 "token": token
+            }
+        )
+    
+    return respond("200",{"message": "ok"})
         
 #PostメソッドでサービスをCallされた際の挙動
 def post(event, context) :
@@ -33,7 +66,7 @@ def post(event, context) :
     
     try :
         #UserID検証とUpdateを2回投げると応答速度が遅いので、一発で実施・・・
-        response = boto3.resource('dynamodb').Table('user').update_item(
+        response = dynamodb.Table('user').update_item(
                     Key = {
                         'userid' : body_object["userid"]
                     },
@@ -47,7 +80,7 @@ def post(event, context) :
         )
         logger.info(response)
         
-        item = boto3.resource('dynamodb').Table('user').get_item(
+        item = dynamodb.Table('user').get_item(
             Key={
                  "userid" : body_object["userid"]
             }
@@ -58,7 +91,7 @@ def post(event, context) :
         #以下のコードは追って別の非同期Lambdaへ移動するが、暫定        
         try :
             #Tokenの登録実施
-            boto3.resource('dynamodb').Table("token").put_item(
+            dynamodb.Table("token").put_item(
                 Item = {
                     "token" :  token , 
                     "userid" : body_object["userid"],                    
@@ -88,3 +121,11 @@ def respond(statusCode, res=None):
         },
     }
 
+
+#汎用データ取得
+def get_daynamo_item(table_name, keyName, KeyValue  ):
+    return dynamodb.Table(table_name).get_item(
+            Key={
+                 keyName: KeyValue
+            }
+        )

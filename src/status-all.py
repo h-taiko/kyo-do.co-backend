@@ -10,6 +10,8 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 logger.info('Loading function')
+#DynamoDBに関するイニシャライズ
+dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
 
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
@@ -40,7 +42,7 @@ def lambda_handler(event, context):
 def get(event, context, userid) :
     
     #Limit = 1とする事で、最初の1行のみ取得する
-    item = boto3.resource('dynamodb').Table('status').scan()
+    item = dynamodb.Table('status').scan()
     logger.info(item)
     
     if item.has_key("Items") == False :
@@ -62,7 +64,7 @@ def respond(statusCode, res=None):
 
 #汎用データ取得
 def get_daynamo_item(table_name, keyName, KeyValue  ):
-    return boto3.resource('dynamodb').Table(table_name).get_item(
+    return dynamodb.Table(table_name).get_item(
             Key={
                  keyName: KeyValue
             }
