@@ -26,14 +26,15 @@ def lambda_handler(event, context):
         
     #ヘッダからTokenを取り出す・・・ロジックイマイチ
     token = AuthorizationHeader.replace("Bearer","").replace(" ","")
-
+    """
     if event["httpMethod"] == "POST":
         return post(event, context, token)   
+    """
     if event["httpMethod"] == "GET" :    
         return get(event, context,token)
     else :
         return respond("400",{"message":"not expected method"}) 
-        
+
 #getメソッドでサービスをCallされた際の挙動
 def get(event, context, token) : 
     #tokenをキーにDynamoからitemを取得    
@@ -42,14 +43,16 @@ def get(event, context, token) :
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
     
-    #Limit = 1とする事で、最初の1行のみ取得する
-    item = dynamodb.Table('group').scan()
+    #グループIDをキーにデータを取得
+    groupId = event["pathParameters"]["groupid"]
+    item = get_daynamo_item("group","id",groupId)
+
     logger.info(item)
     
-    if item.has_key("Items") == False :
+    if item.has_key("Item") == False :
         return respond("400",{"message": "no groups"})
     else :
-        return respond("200", item["Items"] )
+        return respond("200",{"members": item["Item"]["member"]} )
 
 
 #PostメソッドでサービスをCallされた際の挙動
