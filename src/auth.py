@@ -17,7 +17,7 @@ def lambda_handler(event, context):
     if event["httpMethod"] == "POST":
         return post(event, context)
     else :
-        return respond("400",'{"message":"not expected method"}') 
+        return respond("400",{"message":"not expected method"}) 
         
 #PostメソッドでサービスをCallされた際の挙動
 def post(event, context) :
@@ -67,17 +67,14 @@ def post(event, context) :
             )
         except Exception, e:
             logger.info(e)
-            return respond("400",'{"message": "user post is faild"}')
+            return respond("400",{"message": "user post is faild"})
         #本当はこの後に、不要なtokenをクリアする処理を入れたい。
         #ココまで
-
-
         
-        
-        return respond("200",'{"token": "' + token + '", "name": "' + item["Item"]["name"] + '" }')
+        return respond("200",{"token": token , "name": item["Item"]["name"] })
     except :
         #Keyが一致しない、またはパスワードが一致しない場合はExceptionを吐くので、これで逃げる
-        return respond("400",'{"message": "no user or unmatch password"}')
+        return respond("400",{"message": "no user or unmatch password"})
         
 #汎用リターン Lambda統合Proxyの場合、この形式のreturnしか受け付けない
 def respond(statusCode, res=None):
@@ -86,7 +83,8 @@ def respond(statusCode, res=None):
         'body': json.dumps(res),
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'max-age=0'
         },
     }
 

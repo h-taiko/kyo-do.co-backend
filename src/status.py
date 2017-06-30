@@ -20,7 +20,7 @@ def lambda_handler(event, context):
     AuthorizationHeader = event["headers"]["Authorization"]
 
     if re.search(r"Bearer", AuthorizationHeader) is None :
-        return respond("401",'{"message": "no Authorization"}')
+        return respond("401",{"message": "no Authorization"})
         
     #ヘッダからTokenを取り出す・・・ロジックイマイチ
     token = AuthorizationHeader.replace("Bearer","").replace(" ","")
@@ -28,88 +28,98 @@ def lambda_handler(event, context):
     item = get_daynamo_item("token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
-        return respond("401",'{"message": "invalid token"}')
+        return respond("401",{"message": "invalid token"})
     
     if event["httpMethod"] == "PUT": #Status更新
         return put(event, context, item["Item"]["userid"],item["Item"]["name"] )
     elif event["httpMethod"] == "GET" :
         return get(event, context, item["Item"]["userid"])
     else :
-        return respond("400",'{"message":"not expected method"}') 
+        return respond("400",{"message":"not expected method"}) 
         
 #PutメソッドでサービスをCallされた際の挙動
 def put(event, context, userid, name) :
 
     body_object = json.loads(event["body"]) #eventのbodyにはJsonのStringが入っているので、Parseする
+    
+    #DynamoDBは空文字列を許容しないので、空文字列が来ていたらNoneに置換する
+    new_comment = body_object["comment"]
+    if new_comment == "" :
+        new_comment = " "
+    
+    if body_object.has_key("contact") :
+        new_contact = body_object["contact"]
+        if new_contact == "" :
+            new_contact = " "
+    else :
+        new_contact = " "
+    
+    
     try :
+        logger.info("start status put")
+
         #登録実施, 既存の予定があれば上書きする
         boto3.resource('dynamodb').Table("status").put_item(
             Item = {
                 "userid" : userid,
-                "InBuissiness" : body_object["InBuissiness"],
-                "Comment":  body_object["Comment"],
-                "name" : name
+                "inBusiness" : body_object["inBusiness"],
+                "comment":  new_comment,
+                "name" : name,
+                "contact" : new_contact,
+                "lastUpdate" : str(datetime.datetime.today()+datetime.timedelta(hours = 9))
             }
         )
+        
+        logger.info("update status")
         
         #この処理は追って、移動するする予定
         #ログテーブルへの格納登録実施
         boto3.resource('dynamodb').Table("status-log").put_item(
             Item = {
                 "userid" : userid,
-                "datetime" : str(datetime.datetime.today()),
-                "InBuissiness" : body_object["InBuissiness"],
-                "Comment":  body_object["Comment"]
+                "datetime" : str(datetime.datetime.today()+datetime.timedelta(hours = 9)),
+                "inBusiness" : body_object["inBusiness"],
+                "comment":  new_comment,
+                "contact": new_contact                
             }
-        )        
+        )
         #ココまで
+        logger.info("update status-log")
         
         
         return respond("200",event["body"])
     except Exception, e:
         logger.info(e)
-        return respond("400",'{"message": "user post is faild"}')
+        return respond("400",{"message": "user post is faild"})
         
 #GetメソッドでサービスをCallされた際の挙動
 def get(event, context, userid) :
     
     #Limit = 1とする事で、最初の1行のみ取得する
-    item = boto3.resource('dynamodb').Table('status').query(
-        KeyConditionExpression=Key('userid').eq(userid),
-        Limit = 1
-    )
+    item = get_daynamo_item("status", "userid", userid  )
     logger.info(item)
-    
-    if item.has_key("Items") == False :
-        return respond("400",'{"message": "no status"}')
+        
+    if item.has_key("Item") == False : #認証はされたけど、ステータスが無い場合は、Blankを返す
+        logger.info("no status record")
+        return respond("200",{"inBusiness": False, "comment":""})
     else :
-        return respond("200", \
-            '{"InBuissiness":' + str(item["Items"][0]["InBuissiness"]) +   \
-            ' , "Comment": "' + item["Items"][0]["Comment"] + '" }')
+        logger.info("response status")
+        logger.info(item["Item"])
+        
+        return respond("200", json.dumps(item["Item"]) )
 
 #汎用リターン Lambda統合Proxyの場合、この形式のreturnしか受け付けない
 def respond(statusCode, res=None):
     return {
         'statusCode': statusCode,
-        'body': json.dumps(res),
+        'body': res,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'max-age=0'
         },
     }
 
-
-
-#汎用データ登録
-def get_daynamo_item(table_name, keyName, KeyValue  ):
-    return boto3.resource('dynamodb').Table(table_name).put_item(
-        Item = {
-            "userid" : aa,
-            "password" : aa,
-            "name" : aa,
-            "currenttoken": aa             
-        }
-    )
 
 #汎用データ取得
 def get_daynamo_item(table_name, keyName, KeyValue  ):
@@ -118,17 +128,3 @@ def get_daynamo_item(table_name, keyName, KeyValue  ):
                  keyName: KeyValue
             }
         )
-
-#汎用レコード Update
-def update_dynamo_item(table_name, keyName, keyValue, AttributeName, AttributeValue):
-    boto3.resource('dynamodb').Table(table_name).update_item(
-                Key = {
-                     keyName : keyValue
-                },
-                AttributeUpdates = {
-                     AttributeName:{
-                         'Action': 'PUT',
-                         'Value': AttributeValue
-                     }
-                }
-    )    

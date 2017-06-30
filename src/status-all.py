@@ -20,7 +20,7 @@ def lambda_handler(event, context):
     AuthorizationHeader = event["headers"]["Authorization"]
 
     if re.search(r"Bearer", AuthorizationHeader) is None :
-        return respond("401",'{"message": "no Authorization"}')
+        return respond("401",{"message": "no Authorization"})
         
     #ヘッダからTokenを取り出す・・・ロジックイマイチ
     token = AuthorizationHeader.replace("Bearer","").replace(" ","")
@@ -28,12 +28,12 @@ def lambda_handler(event, context):
     item = get_daynamo_item("token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
-        return respond("401",'{"message": "invalid token"}')
+        return respond("401",{"message": "invalid token"})
     
     if event["httpMethod"] == "GET" :
         return get(event, context, item["Item"]["userid"])
     else :
-        return respond("400",'{"message":"not expected method"}') 
+        return respond("400",{"message":"not expected method"}) 
         
         
 #GetメソッドでサービスをCallされた際の挙動
@@ -44,7 +44,7 @@ def get(event, context, userid) :
     logger.info(item)
     
     if item.has_key("Items") == False :
-        return respond("400",'{"message": "no status"}')
+        return respond("400",{"message": "no status"})
     else :
         return respond("200", item["Items"] )
 
@@ -55,21 +55,10 @@ def respond(statusCode, res=None):
         'body': json.dumps(res),
         'headers': {
             'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'max-age=0'
         },
     }
-
-
-
-#汎用データ登録
-def get_daynamo_item(table_name, keyName, KeyValue  ):
-    return boto3.resource('dynamodb').Table(table_name).put_item(
-        Item = {
-            "userid" : aa,
-            "password" : aa,
-            "name" : aa,
-            "currenttoken": aa             
-        }
-    )
 
 #汎用データ取得
 def get_daynamo_item(table_name, keyName, KeyValue  ):
@@ -78,17 +67,3 @@ def get_daynamo_item(table_name, keyName, KeyValue  ):
                  keyName: KeyValue
             }
         )
-
-#汎用レコード Update
-def update_dynamo_item(table_name, keyName, keyValue, AttributeName, AttributeValue):
-    boto3.resource('dynamodb').Table(table_name).update_item(
-                Key = {
-                     keyName : keyValue
-                },
-                AttributeUpdates = {
-                     AttributeName:{
-                         'Action': 'PUT',
-                         'Value': AttributeValue
-                     }
-                }
-    )    
