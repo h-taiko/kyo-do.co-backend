@@ -13,11 +13,19 @@ logger.info('Loading function')
 #DynamoDBに関するイニシャライズ
 dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
 
+#環境定義 Prod環境の場合はそのままPrefixは入らない。Stagingの時は "ZZ_" となる(=DynamoDBのテーブル名として利用)
+stage = ""
+def envCheck(event) :
+    global stage
+    if event["requestContext"]["stage"] == "Dev" :
+        stage = "ZZ_"
+    logger.info("stage=" + stage)
 
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
 
     logger.info("Received event: " + json.dumps(event, indent=2))
+    envCheck(event)
     
     #以下のメソッドは認証が必要
     AuthorizationHeader = event["headers"]["Authorization"]
@@ -28,7 +36,7 @@ def lambda_handler(event, context):
     #ヘッダからTokenを取り出す・・・ロジックイマイチ
     token = AuthorizationHeader.replace("Bearer","").replace(" ","")
     #tokenをキーにDynamoからitemを取得    
-    item = get_daynamo_item("token","token",token)
+    item = get_daynamo_item(stage+"token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
@@ -62,7 +70,7 @@ def put(event, context, userid, name) :
         logger.info("start status put")
 
         #登録実施, 既存の予定があれば上書きする
-        dynamodb.Table("status").put_item(
+        dynamodb.Table(stage+"status").put_item(
             Item = {
                 "userid" : userid,
                 "inBusiness" : body_object["inBusiness"],
@@ -77,7 +85,7 @@ def put(event, context, userid, name) :
         
         #この処理は追って、移動するする予定
         #ログテーブルへの格納登録実施
-        dynamodb.Table("status-log").put_item(
+        dynamodb.Table(stage+"status-log").put_item(
             Item = {
                 "userid" : userid,
                 "datetime" : str(datetime.datetime.today()+datetime.timedelta(hours = 9)),
@@ -99,7 +107,7 @@ def put(event, context, userid, name) :
 def get(event, context, userid) :
     
     #Limit = 1とする事で、最初の1行のみ取得する
-    item = get_daynamo_item("status", "userid", userid  )
+    item = get_daynamo_item(stage+"status", "userid", userid  )
     logger.info(item)
         
     if item.has_key("Item") == False : #認証はされたけど、ステータスが無い場合は、Blankを返す

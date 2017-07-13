@@ -13,10 +13,19 @@ logger.info('Loading function')
 #DynamoDBに関するイニシャライズ
 dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
 
+#環境定義 Prod環境の場合はそのままPrefixは入らない。Stagingの時は "ZZ_" となる(=DynamoDBのテーブル名として利用)
+stage = ""
+def envCheck(event) :
+    global stage
+    if event["requestContext"]["stage"] == "Dev" :
+        stage = "ZZ_"
+    logger.info("stage=" + stage)
+
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
 
     logger.info("Received event: " + json.dumps(event, indent=2))
+    envCheck(event)
 
     #以下のメソッドは認証が必要
     AuthorizationHeader = event["headers"]["Authorization"]
@@ -37,13 +46,13 @@ def lambda_handler(event, context):
 #getメソッドでサービスをCallされた際の挙動
 def get(event, context, token) : 
     #tokenをキーにDynamoからitemを取得    
-    item = get_daynamo_item("token","token",token)
+    item = get_daynamo_item(stage+"token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
     
     #Limit = 1とする事で、最初の1行のみ取得する
-    item = dynamodb.Table('group').scan()
+    item = dynamodb.Table(stage+'group').scan()
     logger.info(item)
     
     if item.has_key("Items") == False :
@@ -58,7 +67,7 @@ def post(event, context, token) :
     new_groupid = hashlib.md5( str(uuid.uuid4()) ).hexdigest()[:8] #ランダムに8文字のIDを生成
 
     #グループ生成をリクエストしたユーザIDを取得＝初期管理者に設定する
-    item = get_daynamo_item("token","token",token)
+    item = get_daynamo_item(stage+"token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
@@ -70,7 +79,7 @@ def post(event, context, token) :
 
     try :
         #登録実施
-        dynamodb.Table("group").put_item(
+        dynamodb.Table(stage+"group").put_item(
             Item = {
                 "id" : new_groupid,
                 "groupname" : body_object["groupname"],
@@ -90,7 +99,7 @@ def post(event, context, token) :
 #putメソッドでサービスをCallされた際の挙動
 def put(event, context, token) : 
     #tokenをキーにDynamoからitemを取得    
-    item = get_daynamo_item("token","token",token)
+    item = get_daynamo_item(stage+"token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
@@ -113,7 +122,7 @@ def put(event, context, token) :
     logger.info(name)
     logger.info(password)
     
-    response = dynamodb.Table('user').update_item(
+    response = dynamodb.Table(stage+'user').update_item(
                 Key = {
                     'userid' : item["Item"]["userid"]
                 },

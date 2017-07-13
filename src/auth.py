@@ -13,8 +13,19 @@ logger.info('Loading function')
 #DynamoDBに関するイニシャライズ
 dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
 
+#環境定義 Prod環境の場合はそのままPrefixは入らない。Stagingの時は "ZZ_" となる(=DynamoDBのテーブル名として利用)
+stage = ""
+def envCheck(event) :
+    global stage
+    if event["requestContext"]["stage"] == "Dev" :
+        stage = "ZZ_"
+    logger.info("stage=" + stage)
+
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
+
+    logger.info("Received event: " + json.dumps(event, indent=2))
+    envCheck(event)
 
     if event["httpMethod"] == "POST":
         return post(event, context)
@@ -29,7 +40,7 @@ def lambda_handler(event, context):
     token = AuthorizationHeader.replace("Bearer","").replace(" ","")
     
     #tokenをキーにDynamoからitemを取得    
-    item = get_daynamo_item("token","token",token)
+    item = get_daynamo_item(stage+"token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
@@ -44,7 +55,7 @@ def lambda_handler(event, context):
 def delete(event, context, token) : 
     
     #ログアウト
-    dynamodb.Table("token").delete_item(
+    dynamodb.Table(stage+"token").delete_item(
             Key={
                  "token": token
             }
@@ -66,7 +77,7 @@ def post(event, context) :
     
     try :
         #UserID検証とUpdateを2回投げると応答速度が遅いので、一発で実施・・・
-        response = dynamodb.Table('user').update_item(
+        response = dynamodb.Table(stage+'user').update_item(
                     Key = {
                         'userid' : body_object["userid"]
                     },
@@ -80,7 +91,7 @@ def post(event, context) :
         )
         logger.info(response)
         
-        item = dynamodb.Table('user').get_item(
+        item = dynamodb.Table(stage+'user').get_item(
             Key={
                  "userid" : body_object["userid"]
             }
@@ -91,7 +102,7 @@ def post(event, context) :
         #以下のコードは追って別の非同期Lambdaへ移動するが、暫定        
         try :
             #Tokenの登録実施
-            dynamodb.Table("token").put_item(
+            dynamodb.Table(stage+"token").put_item(
                 Item = {
                     "token" :  token , 
                     "userid" : body_object["userid"],                    

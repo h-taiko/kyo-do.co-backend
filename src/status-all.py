@@ -13,10 +13,19 @@ logger.info('Loading function')
 #DynamoDBに関するイニシャライズ
 dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
 
+#環境定義 Prod環境の場合はそのままPrefixは入らない。Stagingの時は "ZZ_" となる(=DynamoDBのテーブル名として利用)
+stage = ""
+def envCheck(event) :
+    global stage
+    if event["requestContext"]["stage"] == "Dev" :
+        stage = "ZZ_"
+    logger.info("stage=" + stage)
+
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
 
     logger.info("Received event: " + json.dumps(event, indent=2))
+    envCheck(event)
     
     #以下のメソッドは認証が必要
     AuthorizationHeader = event["headers"]["Authorization"]
@@ -27,7 +36,7 @@ def lambda_handler(event, context):
     #ヘッダからTokenを取り出す・・・ロジックイマイチ
     token = AuthorizationHeader.replace("Bearer","").replace(" ","")
     #tokenをキーにDynamoからitemを取得    
-    item = get_daynamo_item("token","token",token)
+    item = get_daynamo_item(stage+"token","token",token)
     logger.info(item)
     if item.has_key("Item") == False :
         return respond("401",{"message": "invalid token"})
@@ -41,8 +50,7 @@ def lambda_handler(event, context):
 #GetメソッドでサービスをCallされた際の挙動
 def get(event, context, userid) :
     
-    #Limit = 1とする事で、最初の1行のみ取得する
-    item = dynamodb.Table('status').scan()
+    item = dynamodb.Table(stage+'status').scan()
     logger.info(item)
     
     if item.has_key("Items") == False :

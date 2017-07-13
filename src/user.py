@@ -20,6 +20,7 @@ def envCheck(event) :
     global stage
     if event["requestContext"]["stage"] == "Dev" :
         stage = "ZZ_"
+    logger.info("stage=" + stage)
 
 #LambdaFunctionのエントリポイント
 def lambda_handler(event, context):
@@ -156,6 +157,16 @@ def post(event, context) :
             },
             ConditionExpression = 'attribute_not_exists(userid)'
         )
+
+        #登録が完了したので、tokenを有効化
+        dynamodb.Table(stage+"token").put_item(
+            Item = {
+                "token" : token,
+                "userid" : body_object["userid"],
+                "name" : body_object["name"],
+            }
+        )
+        
         return respond("200",{"token": token , "name": body_object["name"] })
         
     except Exception, e:
