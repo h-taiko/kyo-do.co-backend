@@ -18,7 +18,7 @@ dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
 stage = ""
 def envCheck(event) :
     global stage
-    if event["requestContext"]["stage"] == "Dev" :
+    if event["requestContext"]["stage"] in "Dev" :
         stage = "ZZ_"
     logger.info("stage=" + stage)
 
