@@ -153,7 +153,9 @@ def post(event, context) :
                 "userid" : body_object["userid"],
                 "password" : body_object["password"],
                 "name" : body_object["name"],
-                "currenttoken": token
+                "currenttoken": token,
+                "secretQuestion": body_object["secretQuestion"] if body_object.has_key("secretQuestion") else "none",
+                "secretAnswer": body_object["secretAnswer"] if body_object.has_key("secretAnswer") else "none"
             },
             ConditionExpression = 'attribute_not_exists(userid)'
         )
